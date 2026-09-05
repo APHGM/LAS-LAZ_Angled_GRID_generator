@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_all
 ezdxf_datas, ezdxf_binaries, ezdxf_hiddenimports = collect_all('ezdxf')
 
 a = Analysis(
-    ['laz_grid_generator_gui_v0.6.py'],
+    ['laz_grid_generator_gui_v0.7.py'],
     pathex=[],
     binaries=ezdxf_binaries,
     datas=ezdxf_datas,
@@ -25,7 +25,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='LAZ_Grid_Generator_Clean_v0.6',
+    name='LAZ_Grid_Generator_Clean_v0.7',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
