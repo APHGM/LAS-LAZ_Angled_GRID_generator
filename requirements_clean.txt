@@ -1,0 +1,7 @@
+
+numpy
+laspy[lazrs]
+scipy
+pillow
+pyinstaller
+ezdxf
