@@ -1319,16 +1319,20 @@ class LazGridGenerator:
             f.pack_forget()
         if mode == "angle":
             self.angle_frame.pack(fill=tk.X, before=self._shared_frame)
-            self.generate_btn.config(text="GENERATE GRID CSV")
         elif mode == "dxf":
             self.dxf_frame.pack(fill=tk.X, before=self._shared_frame)
-            self.generate_btn.config(text="GENERATE GRID CSV")
         elif mode == "elev":
             self.elev_frame.pack(fill=tk.X, before=self._shared_frame)
-            self.generate_btn.config(text="UPDATE DXF ELEVATIONS")
         else:  # hybrid
             self.hybrid_frame.pack(fill=tk.X, before=self._shared_frame)
-            self.generate_btn.config(text="GENERATE HYBRID DTM")
+        if hasattr(self, "generate_btn"):
+            btn_labels = {
+                "angle":  "GENERATE GRID CSV",
+                "dxf":    "GENERATE GRID CSV",
+                "elev":   "UPDATE DXF ELEVATIONS",
+                "hybrid": "GENERATE HYBRID DTM",
+            }
+            self.generate_btn.config(text=btn_labels.get(mode, "GENERATE"))
         self._check_enable()
 
     # ── File loading ──────────────────────────────────────────────────────────
