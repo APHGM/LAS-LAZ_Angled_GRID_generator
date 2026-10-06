@@ -694,8 +694,7 @@ def process_hybrid_dtm(
     csv_pts,            # (N, 3) array — ground survey [X, Y, Z]
     grid_spacing,
     csv_radius,         # use CSV elevation when nearest survey pt <= this distance
-    laz_min_radius,     # search radius for minimum Z from LAZ
-    laz_percentile,     # percentile of Z values to use (5 = low but rejects noise)
+    laz_min_radius,     # max distance to nearest LAZ point; beyond this → Z=0
     selected_classes,
     out_csv, out_dxf_pts, out_landxml, out_dxf_mesh,
     progress_callback, finish_callback,
@@ -761,28 +760,18 @@ def process_hybrid_dtm(
 
         if n_laz_pts > 0:
             progress_callback(
-                f"Finding minimum LAZ Z for {n_laz_pts:,} grid points "
-                f"(radius: {laz_min_radius} m)...", 50
+                f"Finding nearest LAZ Z for {n_laz_pts:,} grid points "
+                f"(max gap: {laz_min_radius} m)...", 50
             )
             laz_tree = cKDTree(np.column_stack((laz_x, laz_y)))
             query_pts = grid_pts[laz_mask]
-            laz_z_vals = np.zeros(n_laz_pts)
-            chunk = 20_000
-            for i in range(0, n_laz_pts, chunk):
-                end = min(i + chunk, n_laz_pts)
-                nbrs_list = laz_tree.query_ball_point(
-                    query_pts[i:end], r=laz_min_radius
-                )
-                for k, nbrs in enumerate(nbrs_list):
-                    if nbrs:
-                        laz_z_vals[i + k] = float(
-                            np.percentile(laz_z_all[nbrs], laz_percentile)
-                        )
-                    else:
-                        laz_z_vals[i + k] = 0.0
-                        n_zero += 1
-                pct = 50 + int((end / n_laz_pts) * 28)
-                progress_callback(f"LAZ min-Z: {end:,}/{n_laz_pts:,}", pct)
+            # Vectorised nearest-neighbour — fast, no chunking needed
+            dists, idxs = laz_tree.query(query_pts, k=1, workers=-1)
+            laz_z_vals = laz_z_all[idxs]
+            too_far = dists > laz_min_radius
+            laz_z_vals[too_far] = 0.0
+            n_zero = int(np.sum(too_far))
+            progress_callback(f"Nearest-Z assigned ({n_zero:,} pts beyond max gap)", 78)
             grid_z[laz_mask] = laz_z_vals
 
         grid_x = grid_pts[:, 0]
@@ -1225,10 +1214,8 @@ class LazGridGenerator:
              "0.3–0.5 m recommended"),
             ("CSV Radius (m):",      self.hybrid_csv_radius,
              "Use survey elevation when nearest CSV pt ≤ this distance"),
-            ("LAZ Min Radius (m):", self.hybrid_laz_radius,
-             "Search radius for lowest LAZ point (avoids vegetation)"),
-            ("LAZ Percentile:",      self.hybrid_laz_pct,
-             "5–15 recommended  (lower = closer to min; raise if still below ground)"),
+            ("LAZ Max Gap (m):",    self.hybrid_laz_radius,
+             "Grid pts with no LAZ point within this distance → Z=0"),
         ], start=4):
             tk.Label(parent, text=lbl).grid(
                 row=i, column=0, sticky="w", pady=2)
@@ -1239,9 +1226,9 @@ class LazGridGenerator:
 
         # Output checkboxes
         tk.Label(parent, text="Output:").grid(
-            row=8, column=0, sticky="w", pady=(6, 2))
+            row=7, column=0, sticky="w", pady=(6, 2))
         out_f = tk.Frame(parent)
-        out_f.grid(row=8, column=1, columnspan=2, sticky="w", pady=(6, 2))
+        out_f.grid(row=7, column=1, columnspan=2, sticky="w", pady=(6, 2))
         tk.Checkbutton(out_f, text="XYZ CSV",
                        variable=self.hybrid_out_csv).pack(side=tk.LEFT, padx=(0, 8))
         tk.Checkbutton(out_f, text="DXF Points",
@@ -1693,7 +1680,6 @@ class LazGridGenerator:
                 gs  = self.hybrid_grid_spacing.get()
                 cr  = self.hybrid_csv_radius.get()
                 lr  = self.hybrid_laz_radius.get()
-                lp  = max(0.0, min(100.0, self.hybrid_laz_pct.get()))
             except tk.TclError:
                 messagebox.showerror("Error", "Invalid value in Hybrid DTM parameters.")
                 self.generate_btn["state"] = tk.NORMAL
@@ -1748,7 +1734,7 @@ class LazGridGenerator:
                     list(self._laz_files),
                     boundary_poly,
                     csv_pts,
-                    gs, cr, lr, lp,
+                    gs, cr, lr,
                     selected,
                     h_csv, h_dxf_pts, h_landxml, h_dxf_msh,
                     self._update_progress, finish_cb,
