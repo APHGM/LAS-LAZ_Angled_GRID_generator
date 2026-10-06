@@ -695,6 +695,7 @@ def process_hybrid_dtm(
     grid_spacing,
     csv_radius,         # use CSV elevation when nearest survey pt <= this distance
     laz_min_radius,     # search radius for minimum Z from LAZ
+    laz_percentile,     # percentile of Z values to use (5 = low but rejects noise)
     selected_classes,
     out_csv, out_dxf_pts, out_landxml, out_dxf_mesh,
     progress_callback, finish_callback,
@@ -774,7 +775,9 @@ def process_hybrid_dtm(
                 )
                 for k, nbrs in enumerate(nbrs_list):
                     if nbrs:
-                        laz_z_vals[i + k] = float(np.min(laz_z_all[nbrs]))
+                        laz_z_vals[i + k] = float(
+                            np.percentile(laz_z_all[nbrs], laz_percentile)
+                        )
                     else:
                         laz_z_vals[i + k] = 0.0
                         n_zero += 1
@@ -904,6 +907,7 @@ class LazGridGenerator:
         self.hybrid_grid_spacing   = tk.DoubleVar(value=0.5)
         self.hybrid_csv_radius     = tk.DoubleVar(value=3.0)
         self.hybrid_laz_radius     = tk.DoubleVar(value=0.5)
+        self.hybrid_laz_pct        = tk.DoubleVar(value=10.0)
         self.hybrid_out_csv        = tk.BooleanVar(value=True)
         self.hybrid_out_dxf_pts    = tk.BooleanVar(value=False)
         self.hybrid_out_landxml    = tk.BooleanVar(value=True)
@@ -1223,6 +1227,8 @@ class LazGridGenerator:
              "Use survey elevation when nearest CSV pt ≤ this distance"),
             ("LAZ Min Radius (m):", self.hybrid_laz_radius,
              "Search radius for lowest LAZ point (avoids vegetation)"),
+            ("LAZ Percentile:",      self.hybrid_laz_pct,
+             "5–15 recommended  (lower = closer to min; raise if still below ground)"),
         ], start=4):
             tk.Label(parent, text=lbl).grid(
                 row=i, column=0, sticky="w", pady=2)
@@ -1233,9 +1239,9 @@ class LazGridGenerator:
 
         # Output checkboxes
         tk.Label(parent, text="Output:").grid(
-            row=7, column=0, sticky="w", pady=(6, 2))
+            row=8, column=0, sticky="w", pady=(6, 2))
         out_f = tk.Frame(parent)
-        out_f.grid(row=7, column=1, columnspan=2, sticky="w", pady=(6, 2))
+        out_f.grid(row=8, column=1, columnspan=2, sticky="w", pady=(6, 2))
         tk.Checkbutton(out_f, text="XYZ CSV",
                        variable=self.hybrid_out_csv).pack(side=tk.LEFT, padx=(0, 8))
         tk.Checkbutton(out_f, text="DXF Points",
@@ -1687,6 +1693,7 @@ class LazGridGenerator:
                 gs  = self.hybrid_grid_spacing.get()
                 cr  = self.hybrid_csv_radius.get()
                 lr  = self.hybrid_laz_radius.get()
+                lp  = max(0.0, min(100.0, self.hybrid_laz_pct.get()))
             except tk.TclError:
                 messagebox.showerror("Error", "Invalid value in Hybrid DTM parameters.")
                 self.generate_btn["state"] = tk.NORMAL
@@ -1741,7 +1748,7 @@ class LazGridGenerator:
                     list(self._laz_files),
                     boundary_poly,
                     csv_pts,
-                    gs, cr, lr,
+                    gs, cr, lr, lp,
                     selected,
                     h_csv, h_dxf_pts, h_landxml, h_dxf_msh,
                     self._update_progress, finish_cb,
