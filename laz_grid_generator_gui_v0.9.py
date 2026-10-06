@@ -750,8 +750,10 @@ def process_hybrid_dtm(
             f"CSV covers {n_csv:,} / {n_grid:,} grid points", 48
         )
 
-        grid_z = np.zeros(n_grid)
-        grid_z[use_csv] = csv_pts[csv_idxs[use_csv], 2]
+        grid_z      = np.zeros(n_grid)
+        grid_source = np.zeros(n_grid, dtype=np.int8)  # 0=LAZ, 1=CSV
+        grid_z[use_csv]      = csv_pts[csv_idxs[use_csv], 2]
+        grid_source[use_csv] = 1
 
         # ── LAZ minimum-Z assignment ──────────────────────────────────────────
         laz_mask = ~use_csv
@@ -766,7 +768,7 @@ def process_hybrid_dtm(
             laz_tree = cKDTree(np.column_stack((laz_x, laz_y)))
             query_pts = grid_pts[laz_mask]
             # Vectorised nearest-neighbour — fast, no chunking needed
-            dists, idxs = laz_tree.query(query_pts, k=1, workers=-1)
+            dists, idxs = laz_tree.query(query_pts, k=1)
             laz_z_vals = laz_z_all[idxs]
             too_far = dists > laz_min_radius
             laz_z_vals[too_far] = 0.0
@@ -786,10 +788,10 @@ def process_hybrid_dtm(
 
         if out_csv:
             progress_callback("Writing XYZ CSV...", 82)
-            data = np.column_stack((grid_x, grid_y, grid_z))
+            data = np.column_stack((grid_x, grid_y, grid_z, grid_source))
             with open(out_csv, "w", newline="") as f:
-                f.write("X,Y,Z\n")
-                np.savetxt(f, data, delimiter=",", fmt="%.3f")
+                f.write("X,Y,Z,Source\n")  # Source: 1=CSV survey, 0=LAZ nearest
+                np.savetxt(f, data, delimiter=",", fmt=["%.3f", "%.3f", "%.3f", "%d"])
             saved.append(f"XYZ CSV:   {out_csv}")
 
         if out_dxf_pts:
@@ -894,7 +896,7 @@ class LazGridGenerator:
         self._selected_bdy_poly    = tk.IntVar(value=-1)
         self.hybrid_csv_path       = tk.StringVar()
         self.hybrid_grid_spacing   = tk.DoubleVar(value=0.5)
-        self.hybrid_csv_radius     = tk.DoubleVar(value=3.0)
+        self.hybrid_csv_radius     = tk.DoubleVar(value=5.0)
         self.hybrid_laz_radius     = tk.DoubleVar(value=0.5)
         self.hybrid_laz_pct        = tk.DoubleVar(value=10.0)
         self.hybrid_out_csv        = tk.BooleanVar(value=True)
@@ -1213,7 +1215,7 @@ class LazGridGenerator:
             ("Grid Spacing (m):",    self.hybrid_grid_spacing,
              "0.3–0.5 m recommended"),
             ("CSV Radius (m):",      self.hybrid_csv_radius,
-             "Use survey elevation when nearest CSV pt ≤ this distance"),
+             "Use survey elevation within this distance  (check Source col in CSV: 1=CSV, 0=LAZ)"),
             ("LAZ Max Gap (m):",    self.hybrid_laz_radius,
              "Grid pts with no LAZ point within this distance → Z=0"),
         ], start=4):
