@@ -545,11 +545,76 @@ def write_points_dxf(output_path, x_arr, y_arr, z_arr, layer="GRID_POINTS"):
 # Hybrid DTM helpers
 # ---------------------------------------------------------------------------
 
-def read_survey_csv(csv_path):
+def detect_csv_columns(csv_path):
     """
-    Read ground survey CSV: columns are  ID, Easting, Northing, RL  (trailing comma OK).
+    Inspect the first non-empty line of a CSV and return (col_x, col_y, col_z, has_header).
+    Tries header-name matching first, then falls back to guessing from value magnitudes.
+    Returns (col_x, col_y, col_z) as 0-based column indices.
+    """
+    _X_NAMES = {"x", "easting", "east", "e", "lon", "longitude", "long"}
+    _Y_NAMES = {"y", "northing", "north", "n", "lat", "latitude"}
+    _Z_NAMES = {"z", "rl", "elev", "elevation", "height", "h", "level", "reduced level"}
+
+    with open(csv_path, newline="") as f:
+        lines = [l.strip().rstrip(",") for l in f if l.strip().rstrip(",")]
+
+    if not lines:
+        return 1, 2, 3  # safe default
+
+    first = [p.strip() for p in lines[0].split(",")]
+
+    # Try header matching
+    lower = [h.lower() for h in first]
+    col_x = col_y = col_z = None
+    for i, h in enumerate(lower):
+        if h in _X_NAMES and col_x is None:
+            col_x = i
+        elif h in _Y_NAMES and col_y is None:
+            col_y = i
+        elif h in _Z_NAMES and col_z is None:
+            col_z = i
+
+    if col_x is not None and col_y is not None and col_z is not None:
+        return col_x, col_y, col_z
+
+    # No header — guess from value magnitudes using first data row
+    data_line = lines[0]
+    try:
+        float(first[0])  # numeric → no header
+    except ValueError:
+        data_line = lines[1] if len(lines) > 1 else lines[0]
+
+    vals = []
+    for p in data_line.split(","):
+        try:
+            vals.append(float(p.strip()))
+        except ValueError:
+            vals.append(None)
+
+    # Heuristic: Z (RL/elevation) is typically 0–5000 m;
+    # X (Easting) and Y (Northing) are typically >10 000 or very similar large numbers.
+    # The smaller large number pair is often [X, Y]; the small one is Z.
+    numeric = [(i, v) for i, v in enumerate(vals) if v is not None]
+    if len(numeric) >= 3:
+        by_mag = sorted(numeric, key=lambda iv: abs(iv[1]))
+        # smallest absolute value → Z; remaining two ordered by index → X, Y
+        z_idx = by_mag[0][0]
+        xy = sorted([iv[0] for iv in by_mag[1:3]])
+        return xy[0], xy[1], z_idx
+
+    return 1, 2, 3  # fallback
+
+
+def read_survey_csv(csv_path, col_x=None, col_y=None, col_z=None):
+    """
+    Read ground survey CSV with flexible column order.
+    col_x/col_y/col_z are 0-based column indices; if None they are auto-detected.
     Returns (N, 3) float64 array of [X, Y, Z].
     """
+    if col_x is None or col_y is None or col_z is None:
+        col_x, col_y, col_z = detect_csv_columns(csv_path)
+
+    need = max(col_x, col_y, col_z) + 1
     pts = []
     with open(csv_path, newline="") as f:
         for line in f:
@@ -557,17 +622,20 @@ def read_survey_csv(csv_path):
             if not line:
                 continue
             parts = [p.strip() for p in line.split(",")]
-            if len(parts) < 4:
+            if len(parts) < need:
                 continue
             try:
-                x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                x = float(parts[col_x])
+                y = float(parts[col_y])
+                z = float(parts[col_z])
                 pts.append([x, y, z])
             except ValueError:
-                continue
+                continue  # skip header rows or bad lines
     if not pts:
         raise ValueError(
             "No valid survey points found in CSV.\n"
-            "Expected format:  ID, Easting, Northing, RL"
+            f"Tried columns X={col_x}, Y={col_y}, Z={col_z} (0-based).\n"
+            "Check the Column Mapping in the Hybrid DTM panel."
         )
     return np.array(pts, dtype=np.float64)
 
@@ -895,6 +963,9 @@ class LazGridGenerator:
         self._hybrid_bdy_polylines = []
         self._selected_bdy_poly    = tk.IntVar(value=-1)
         self.hybrid_csv_path       = tk.StringVar()
+        self.hybrid_csv_col_x      = tk.IntVar(value=1)
+        self.hybrid_csv_col_y      = tk.IntVar(value=2)
+        self.hybrid_csv_col_z      = tk.IntVar(value=3)
         self.hybrid_grid_spacing   = tk.DoubleVar(value=0.5)
         self.hybrid_csv_radius     = tk.DoubleVar(value=5.0)
         self.hybrid_laz_radius     = tk.DoubleVar(value=0.5)
@@ -1205,10 +1276,21 @@ class LazGridGenerator:
                  state="readonly", width=36).pack(side=tk.LEFT)
         tk.Button(cef, text="Browse",
                   command=self._load_hybrid_csv).pack(side=tk.LEFT, padx=4)
-        tk.Label(parent,
-                 text="Format:  ID, Easting, Northing, RL  (trailing comma OK)",
-                 fg="grey", font=("Arial", 8, "italic"),
-                 ).grid(row=3, column=1, columnspan=2, sticky="w")
+        # CSV column mapping
+        col_f = tk.Frame(parent)
+        col_f.grid(row=3, column=1, columnspan=2, sticky="w", pady=(2, 0))
+        tk.Label(col_f, text="Col mapping (0-based):").pack(side=tk.LEFT)
+        tk.Label(col_f, text="  X").pack(side=tk.LEFT)
+        tk.Spinbox(col_f, textvariable=self.hybrid_csv_col_x,
+                   from_=0, to=20, width=3).pack(side=tk.LEFT, padx=(1, 6))
+        tk.Label(col_f, text="Y").pack(side=tk.LEFT)
+        tk.Spinbox(col_f, textvariable=self.hybrid_csv_col_y,
+                   from_=0, to=20, width=3).pack(side=tk.LEFT, padx=(1, 6))
+        tk.Label(col_f, text="Z").pack(side=tk.LEFT)
+        tk.Spinbox(col_f, textvariable=self.hybrid_csv_col_z,
+                   from_=0, to=20, width=3).pack(side=tk.LEFT, padx=(1, 6))
+        tk.Button(col_f, text="Auto-detect",
+                  command=self._autodetect_csv_cols).pack(side=tk.LEFT, padx=(4, 0))
 
         # Numeric params
         for i, (lbl, var, hint) in enumerate([
@@ -1258,7 +1340,20 @@ class LazGridGenerator:
         if not path:
             return
         self.hybrid_csv_path.set(path)
+        self._autodetect_csv_cols()
         self._check_enable()
+
+    def _autodetect_csv_cols(self):
+        path = self.hybrid_csv_path.get()
+        if not path or not os.path.isfile(path):
+            return
+        try:
+            cx, cy, cz = detect_csv_columns(path)
+            self.hybrid_csv_col_x.set(cx)
+            self.hybrid_csv_col_y.set(cy)
+            self.hybrid_csv_col_z.set(cz)
+        except Exception:
+            pass
 
     def _populate_bdy_polylines(self, dxf_path):
         for w in self.bdy_inner.winfo_children():
@@ -1662,7 +1757,12 @@ class LazGridGenerator:
                 boundary_poly = np.vstack([boundary_poly, boundary_poly[0]])
 
             try:
-                csv_pts = read_survey_csv(self.hybrid_csv_path.get())
+                csv_pts = read_survey_csv(
+                    self.hybrid_csv_path.get(),
+                    col_x=self.hybrid_csv_col_x.get(),
+                    col_y=self.hybrid_csv_col_y.get(),
+                    col_z=self.hybrid_csv_col_z.get(),
+                )
             except Exception as e:
                 messagebox.showerror("CSV Error", str(e))
                 self.generate_btn["state"] = tk.NORMAL
