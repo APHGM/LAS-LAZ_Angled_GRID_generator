@@ -7,7 +7,7 @@ import os
 import glob
 
 try:
-    from lazrs import LazrsError
+    from lazrs import LazrsError  # type: ignore[import-untyped]
 except ImportError:
     LazrsError = None
 
@@ -48,7 +48,7 @@ def get_all_polylines_from_dxf(dxf_path):
     if not HAS_EZDXF:
         raise ImportError("ezdxf required.  pip install ezdxf")
 
-    doc = ezdxf.readfile(dxf_path)
+    doc = ezdxf.readfile(dxf_path)  # type: ignore[attr-defined]
     msp = doc.modelspace()
     results = []
 
@@ -58,9 +58,9 @@ def get_all_polylines_from_dxf(dxf_path):
         etype = entity.dxftype()
 
         if etype == "LWPOLYLINE":
-            pts = [(p[0], p[1]) for p in entity.get_points()]
+            pts = [(p[0], p[1]) for p in entity.get_points()]  # type: ignore[union-attr]
         elif etype == "POLYLINE":
-            pts = [(v.dxf.location.x, v.dxf.location.y) for v in entity.vertices]
+            pts = [(v.dxf.location.x, v.dxf.location.y) for v in entity.vertices]  # type: ignore[union-attr]
 
         if len(pts) >= 2:
             arr = np.array(pts, dtype=np.float64)
@@ -317,7 +317,7 @@ def process(
 
         # ── KD-tree elevation assignment ──────────────────────────────────────
         progress_callback(f"Building KD-tree for {len(points_x):,} LAZ points...", 55)
-        from scipy.spatial import cKDTree
+        from scipy.spatial import cKDTree  # type: ignore[import-untyped]
         tree = cKDTree(np.column_stack((points_x, points_y)))
 
         progress_callback("Interpolating elevations (nearest neighbour)...", 65)
@@ -404,7 +404,7 @@ def read_dxf_points(dxf_path):
     """
     if not HAS_EZDXF:
         raise ImportError("ezdxf required.  pip install ezdxf")
-    doc = ezdxf.readfile(dxf_path)
+    doc = ezdxf.readfile(dxf_path)  # type: ignore[attr-defined]
     msp = doc.modelspace()
     pts = []
     for entity in msp:
@@ -424,7 +424,7 @@ def write_dxf_with_updated_z(input_dxf_path, output_dxf_path, new_z_values):
     Read input DXF, update each POINT entity's Z with the corresponding value
     from new_z_values (same order as read_dxf_points), and save to output path.
     """
-    doc = ezdxf.readfile(input_dxf_path)
+    doc = ezdxf.readfile(input_dxf_path)  # type: ignore[attr-defined]
     msp = doc.modelspace()
     idx = 0
     for entity in msp:
@@ -478,7 +478,7 @@ def process_update_elevations(
         progress_callback(f"Loaded {len(points_x):,} LAZ points. Building KD-tree...", 56)
 
         # ── KD-tree lookup ────────────────────────────────────────────────────
-        from scipy.spatial import cKDTree
+        from scipy.spatial import cKDTree  # type: ignore[import-untyped]
         tree = cKDTree(np.column_stack((points_x, points_y)))
 
         progress_callback("Updating point elevations...", 65)
@@ -534,7 +534,7 @@ def process_update_elevations(
 def write_points_dxf(output_path, x_arr, y_arr, z_arr, layer="GRID_POINTS"):
     if not HAS_EZDXF:
         raise ImportError("ezdxf required.  pip install ezdxf")
-    doc = ezdxf.new(dxfversion="R2010")
+    doc = ezdxf.new(dxfversion="R2010")  # type: ignore[attr-defined]
     msp = doc.modelspace()
     for x, y, z in zip(x_arr, y_arr, z_arr):
         msp.add_point((float(x), float(y), float(z)), dxfattribs={"layer": layer})
@@ -671,7 +671,7 @@ def write_dxf_tin_mesh(output_path, x_arr, y_arr, z_arr, grid_spacing,
     tri = Delaunay(pts2d)
     max_edge = grid_spacing * 2.5
 
-    doc = ezdxf.new(dxfversion="R2010")
+    doc = ezdxf.new(dxfversion="R2010")  # type: ignore[attr-defined]
     msp = doc.modelspace()
 
     for s in tri.simplices:
@@ -700,7 +700,7 @@ def process_hybrid_dtm(
     progress_callback, finish_callback,
 ):
     try:
-        from scipy.spatial import cKDTree
+        from scipy.spatial import cKDTree  # type: ignore[import-untyped]
 
         # ── Generate grid within boundary ────────────────────────────────────
         progress_callback("Generating grid within boundary polygon...", 3)
