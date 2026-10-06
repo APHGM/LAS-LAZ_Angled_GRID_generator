@@ -858,8 +858,8 @@ class LazGridGenerator:
     def __init__(self, root):
         self.root = root
         self.root.title("LAZ Grid Generator v0.9")
-        self.root.geometry("780x960")
-        self.root.resizable(False, False)
+        self.root.geometry("820x920")
+        self.root.resizable(False, True)
 
         # LAZ state
         self.laz_mode    = tk.StringVar(value="single")
@@ -975,16 +975,20 @@ class LazGridGenerator:
         )
         gmr = tk.Frame(main)
         gmr.pack(anchor="w", pady=(0, 4))
-        tk.Radiobutton(gmr, text="Angle-based  (no DXF required)",
+        gmr_row1 = tk.Frame(gmr)
+        gmr_row1.pack(anchor="w")
+        tk.Radiobutton(gmr_row1, text="Angle-based  (no DXF required)",
                         variable=self.grid_mode, value="angle",
-                        command=self._on_grid_mode_change).pack(side=tk.LEFT, padx=(0, 10))
-        tk.Radiobutton(gmr, text="DXF Centreline  (chainage)",
+                        command=self._on_grid_mode_change).pack(side=tk.LEFT, padx=(0, 20))
+        tk.Radiobutton(gmr_row1, text="DXF Centreline  (chainage)",
                         variable=self.grid_mode, value="dxf",
-                        command=self._on_grid_mode_change).pack(side=tk.LEFT, padx=(0, 10))
-        tk.Radiobutton(gmr, text="Update DXF Point Elevations",
+                        command=self._on_grid_mode_change).pack(side=tk.LEFT)
+        gmr_row2 = tk.Frame(gmr)
+        gmr_row2.pack(anchor="w", pady=(2, 0))
+        tk.Radiobutton(gmr_row2, text="Update DXF Point Elevations",
                         variable=self.grid_mode, value="elev",
-                        command=self._on_grid_mode_change).pack(side=tk.LEFT, padx=(0, 10))
-        tk.Radiobutton(gmr, text="Hybrid DTM  (boundary + survey CSV + LAZ)",
+                        command=self._on_grid_mode_change).pack(side=tk.LEFT, padx=(0, 20))
+        tk.Radiobutton(gmr_row2, text="Hybrid DTM  (boundary + survey CSV + LAZ)",
                         variable=self.grid_mode, value="hybrid",
                         command=self._on_grid_mode_change).pack(side=tk.LEFT)
 
@@ -1036,7 +1040,7 @@ class LazGridGenerator:
         cls_lf = tk.LabelFrame(main, text="Available Classes")
         cls_lf.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
 
-        self.cls_canvas = tk.Canvas(cls_lf, height=90)
+        self.cls_canvas = tk.Canvas(cls_lf, height=75)
         sb_cls = tk.Scrollbar(cls_lf, orient="vertical", command=self.cls_canvas.yview)
         self.scrollable_frame = tk.Frame(self.cls_canvas)
         self.scrollable_frame.bind(
@@ -1317,14 +1321,20 @@ class LazGridGenerator:
         for f in (self.angle_frame, self.dxf_frame,
                   self.elev_frame, self.hybrid_frame):
             f.pack_forget()
-        if mode == "angle":
-            self.angle_frame.pack(fill=tk.X, before=self._shared_frame)
-        elif mode == "dxf":
-            self.dxf_frame.pack(fill=tk.X, before=self._shared_frame)
-        elif mode == "elev":
-            self.elev_frame.pack(fill=tk.X, before=self._shared_frame)
-        else:  # hybrid
+        if mode == "hybrid":
             self.hybrid_frame.pack(fill=tk.X, before=self._shared_frame)
+            self._shared_frame.pack_forget()
+            self._dxf_export_frame.pack_forget()
+        else:
+            if mode == "angle":
+                self.angle_frame.pack(fill=tk.X, before=self._shared_frame)
+            elif mode == "dxf":
+                self.dxf_frame.pack(fill=tk.X, before=self._shared_frame)
+            elif mode == "elev":
+                self.elev_frame.pack(fill=tk.X, before=self._shared_frame)
+            self._shared_frame.pack(fill=tk.X, pady=(4, 2),
+                                    before=self._dxf_export_frame)
+            self._dxf_export_frame.pack(fill=tk.X, pady=(0, 6))
         if hasattr(self, "generate_btn"):
             btn_labels = {
                 "angle":  "GENERATE GRID CSV",
